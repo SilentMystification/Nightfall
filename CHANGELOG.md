@@ -1,3 +1,6 @@
+### 1.5.12 - December 14, 2025
+- Fixed incorrect hit animation playing for non-default timing windows
+
 ### 1.5.11 - August 4, 2025
 - Fixed chain not being disabled through `Gameplay Settings`
 

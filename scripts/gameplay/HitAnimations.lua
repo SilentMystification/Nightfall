@@ -14,11 +14,10 @@ local abs = math.abs
 local HitAnimations = {}
 HitAnimations.__index = HitAnimations
 
----@param ctx GameplayContext
 ---@param window Window
 ---@param isGameplaySettings? boolean
 ---@return HitAnimations
-function HitAnimations.new(ctx, window, isGameplaySettings)
+function HitAnimations.new(window, isGameplaySettings)
 	---@class HitAnimationsBase
 	local self = {
 		animationType = getSetting("hitAnimationType", "STANDARD"),
@@ -34,7 +33,7 @@ function HitAnimations.new(ctx, window, isGameplaySettings)
 		nearQueues = makeHitAnimationQueues(),
 		scale = getSetting("hitAnimationScale", 1),
 		sCritAnimation = makeHitAnimation("SCritical", isGameplaySettings),
-		sCritWindow = ctx.sCritWindow or 23,
+		sCritWindow = nil,
 		window = window,
 	}
 
@@ -120,6 +119,10 @@ end
 ---@param rating rating
 function HitAnimations:enqueueHit(btn, delta, rating)
 	if rating == 2 then
+		if not self.sCritWindow then
+			self.sCritWindow = math.floor(gameplay.hitWindow.perfect / 2)
+		end
+
 		for _, state in ipairs(self.critQueues[btn + 1]) do
 			if not state.queued then
 				if abs(delta) <= self.sCritWindow then

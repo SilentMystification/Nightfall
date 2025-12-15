@@ -52,7 +52,7 @@ local critBar = CritBar.new(window)
 local earlate = nil
 local gaugeBar = nil
 ---@type HitAnimations
-local hitAnimations = hitAnimationsEnabled and HitAnimations.new(context, window)
+local hitAnimations = hitAnimationsEnabled and HitAnimations.new(window)
 ---@type HitDeltaBar
 local hitDeltaBar = nil
 local laserAlerts = nil
