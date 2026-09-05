@@ -274,7 +274,7 @@ end
 ---@param cellHighlightH number
 ---@param rowMidY number
 ---@param fieldKey string
-function SettingsWindow:drawDrillCell(dt, x, idx, cx, cellW, cellHighlightH, rowMidY, fieldKey)
+function SettingsWindow:drawDrillCell(dt, x, idx, cx, cellW, cellHighlightH, rowMidY, fieldKey, isCurrentRow)
 	local cell = self.ctx.settings[idx]
 	local isCurrent = idx == self.ctx.settingIndex
 	local h = self:getHighlight(idx)
@@ -299,9 +299,10 @@ function SettingsWindow:drawDrillCell(dt, x, idx, cx, cellW, cellHighlightH, row
 		self:drawInvalidCell(cell.value, x, cx, cellW, rowMidY)
 	else
 		-- Flash green-to-white when this cell's value changes while staying valid.
+		-- Only checked for the current row, so only the row being edited can ever flash.
 		local key = cell.trackingId .. fieldKey
 		local lastVal = self.lastCellValue[key]
-		if lastVal ~= nil and lastVal ~= cell.value then
+		if isCurrentRow and lastVal ~= nil and lastVal ~= cell.value then
 			self:getFlashEasing(self.cellValidFlashes, key):reset(1)
 		end
 		self.lastCellValue[key] = cell.value
@@ -427,12 +428,14 @@ function SettingsWindow:drawDrillsGrid(dt, x, y, tabIndex)
 		local isDeleteCurrent = deleteIdx == settingIndex
 		local rowMidY = y + ((rowIndex0 - scrollRow) * rowH) + (rowH / 2)
 
+		local isCurrentRow = rowIndex0 == currentVisualRow
+
 		-- Did THIS drill (the one under the cursor) move to a different row (a
 		-- resort)? Only checked for the current row - a resort shifts every row
 		-- between the old and new position by one, and they'd all look "moved" too.
 		local trackingId = rawSettings[selectIdx].trackingId
 		local prevRow = self.lastRowPosition[trackingId]
-		if rowIndex0 == currentVisualRow and prevRow ~= nil and prevRow ~= row then
+		if isCurrentRow and prevRow ~= nil and prevRow ~= row then
 			self:getFlashEasing(self.rowMoveFlashes, trackingId):reset(1)
 		end
 		self.lastRowPosition[trackingId] = row
@@ -501,10 +504,10 @@ function SettingsWindow:drawDrillsGrid(dt, x, y, tabIndex)
 		gfx.FontSize(22)
 		gfx.TextAlign(gfx.TEXT_ALIGN_CENTER + gfx.TEXT_ALIGN_MIDDLE)
 
-		self:drawDrillCell(dt, x, inMIdx, inMX, cellW, cellHighlightH, rowMidY, "_inM")
-		self:drawDrillCell(dt, x, inBIdx, inBX, cellW, cellHighlightH, rowMidY, "_inB")
-		self:drawDrillCell(dt, x, outMIdx, outMX, cellW, cellHighlightH, rowMidY, "_outM")
-		self:drawDrillCell(dt, x, outBIdx, outBX, cellW, cellHighlightH, rowMidY, "_outB")
+		self:drawDrillCell(dt, x, inMIdx, inMX, cellW, cellHighlightH, rowMidY, "_inM", isCurrentRow)
+		self:drawDrillCell(dt, x, inBIdx, inBX, cellW, cellHighlightH, rowMidY, "_inB", isCurrentRow)
+		self:drawDrillCell(dt, x, outMIdx, outMX, cellW, cellHighlightH, rowMidY, "_outM", isCurrentRow)
+		self:drawDrillCell(dt, x, outBIdx, outBX, cellW, cellHighlightH, rowMidY, "_outB", isCurrentRow)
 
 		Fonts:load("SemiBold")
 		gfx.FontSize(18)
