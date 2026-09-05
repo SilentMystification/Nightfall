@@ -214,23 +214,6 @@ function SettingsWindow:drawSettings(dt, x, y, tabIndex)
 	end
 end
 
--- The Drills tab lays its rows out as a compact grid (one line per drill,
--- header once at the top) instead of the generic one-row-per-line list.
---
--- This deliberately bypasses SettingsWindow.settings[tabIndex] (the label
--- cache built once in getSettingsProps, keyed by setting name): drill rows
--- are dynamic (added/removed, and the C++ side rebuilds their names/values
--- live), so a name-keyed cache built once at dialog-open would silently miss
--- new/changed rows until the whole dialog were torn down and recreated. This
--- reads straight from the live self.ctx.settings (refreshed every frame by
--- SettingsWindowContext:update) and draws with plain gfx.Text calls, so it
--- always reflects the current C++ state with no caching to go stale.
---
--- Row layout produced by PracticeModeSettingsDialog::m_CreateDrillsTab is a
--- fixed, deterministic pattern: 6 settings per drill (Select, In-Measure,
--- In-Beat, Out-Measure, Out-Beat, Delete), followed by exactly one trailing
--- "Add drill..." button - so drills can be grouped by position rather than
--- by name.
 -- Draws one numeric cell (In-Measure/In-Beat/Out-Measure/Out-Beat) of a drill
 -- row. A method taking plain arguments - not a per-row table of per-cell
 -- tables - so the grid's hot per-frame render path (every visible row, every
@@ -277,6 +260,23 @@ function SettingsWindow:drawDrillCell(dt, x, idx, cx, cellW, cellHighlightH, row
 	end
 end
 
+-- The Drills tab lays its rows out as a compact grid (one line per drill,
+-- header once at the top) instead of the generic one-row-per-line list.
+--
+-- This deliberately bypasses SettingsWindow.settings[tabIndex] (the label
+-- cache built once in getSettingsProps, keyed by setting name): drill rows
+-- are dynamic (added/removed, and the C++ side rebuilds their names/values
+-- live), so a name-keyed cache built once at dialog-open would silently miss
+-- new/changed rows until the whole dialog were torn down and recreated. This
+-- reads straight from the live self.ctx.settings (refreshed every frame by
+-- SettingsWindowContext:update) and draws with plain gfx.Text calls, so it
+-- always reflects the current C++ state with no caching to go stale.
+--
+-- Row layout produced by PracticeModeSettingsDialog::m_CreateDrillsTab is a
+-- fixed, deterministic pattern: 7 settings per drill (Select, Rename,
+-- In-Measure, In-Beat, Out-Measure, Out-Beat, Delete), followed by exactly
+-- one trailing "Add drill..." button - so drills can be grouped by position
+-- rather than by name.
 ---@param dt deltaTime
 ---@param x number
 ---@param y number
