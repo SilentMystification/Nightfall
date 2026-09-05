@@ -31,6 +31,13 @@ local FormattedPracticeSettings = {
 			name = "EXIT PRACTICE MODE",
 		},
 	},
+	["Drills"] = {
+		-- Every row on this tab (the grid, and the trailing "Add drill" button)
+		-- is drawn directly by SettingsWindow:drawDrillsGrid, reading live data
+		-- rather than through this lookup table - only the tab name is used
+		-- from here.
+		name = "DRILLS",
+	},
 	["Looping"] = {
 		name = "LOOP POINTS",
 		["Set the start point to here"] = {
