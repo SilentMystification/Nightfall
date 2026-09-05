@@ -11,10 +11,8 @@ local getSettingsProps = require("settingswindow/helpers/getSettingsProps")
 local SettingsWindow = {}
 SettingsWindow.__index = SettingsWindow
 
--- Free-running clock for the invalid-cell flash in drawDrillCell, ticked once
--- per frame in drawDrillsGrid - a module-level accumulator rather than
--- something reset per-cell, so every invalid cell on screen flashes in
--- lockstep instead of drifting relative to each other.
+-- Free-running clock for the invalid-cell flash (ticked in drawDrillsGrid), so
+-- every invalid cell flashes in lockstep instead of drifting.
 local invalidFlashTime = 0
 
 ---@param ctx SettingsWindowContext
@@ -42,10 +40,8 @@ function SettingsWindow.new(ctx, window, isSongSelect)
 		y = 0,
 		w = 808,
 		h = 664,
-		-- Drills-grid green-flash-then-fade state (see getFlashEasing below),
-		-- keyed by each row/cell's stable trackingId rather than position -
-		-- drills resort by start point, so position alone can't tell "the same
-		-- drill, moved" from "a different drill, now here."
+		-- Drills-grid green-flash-then-fade state (getFlashEasing below), keyed
+		-- by trackingId since drills resort by start point.
 		rowMoveFlashes = {}, -- trackingId -> Easing, for the Name column
 		cellValidFlashes = {}, -- trackingId.."_"..field -> Easing
 		lastRowPosition = {}, -- trackingId -> row, to detect a move
@@ -58,12 +54,9 @@ function SettingsWindow.new(ctx, window, isSongSelect)
 	return setmetatable(self, SettingsWindow)
 end
 
--- self.highlights is sized once (getSettingsProps, at construction) to however
--- many rows existed across all tabs at that moment. This window object lives
--- for the whole practice-mode session and is never rebuilt, but the Drills tab's
--- row count changes at runtime as drills are added - so a row index beyond the
--- original size has no Easing here. Create (and cache) one on first use instead
--- of indexing the table directly, so newly-added rows still animate/highlight.
+-- self.highlights is sized once at construction, but the Drills tab's row
+-- count grows at runtime - create (and cache) one on first use instead of
+-- indexing directly, so new rows still animate.
 ---@param idx integer
 ---@return Easing
 function SettingsWindow:getHighlight(idx)
@@ -77,12 +70,9 @@ function SettingsWindow:getHighlight(idx)
 	return h
 end
 
--- Green-to-white fade used for "this just changed to something good" cues -
--- a drill's row moved after a resort, or a cell's value just changed while
--- staying valid. Created at rest (value 0, i.e. invisible) on first use; the
--- caller is responsible for :reset(1)-ing it once, at the moment the change
--- is actually detected, then :stop()-ing it every frame after to decay back
--- toward 0 (see tickHighlight above for the same start/stop idiom).
+-- Green-to-white fade for "this just changed to something good". Created at
+-- rest on first use; caller :reset(1)s it on change, then :stop()s it every
+-- frame after to decay back to 0 (see tickHighlight).
 ---@param store table<string|integer, Easing>
 ---@param key string|integer
 ---@return Easing
@@ -103,19 +93,15 @@ local function flashFadeColor(value)
 	return { c, 255, c }
 end
 
--- start()/stop() only ever nudge timer toward 1 or 0 by dt/duration each frame -
--- they never snap it. If a highlight is re-selected before its previous stop()
--- fully decayed back to 0 (easy with the Drills grid's Up/Down navigation, which
--- can move faster than the 0.2s animation), the next start() resumes from
--- wherever timer was left instead of 0, so the box jumps most of the way to full
--- width/alpha in one frame and only the tail of the animation is visible. Force
--- a reset to exactly 0 on the not-current -> current edge so every activation is
--- a full, clean sweep.
+-- start()/stop() only nudge the timer, never snap it - if re-selected before
+-- fully decayed (easy with fast Up/Down), it'd resume mid-way and jump most of
+-- the way to full in one frame. Force a reset to 0 on the not-current -> current
+-- edge so every activation is a full, clean sweep.
 ---@param h Easing
 ---@param isCurrent boolean
 ---@param dt deltaTime
----@param duration? number seconds for a full sweep - wider boxes need longer so the sweep speed (px/s) doesn't look rushed next to narrower ones
----@param easeType? easingType 3 (default, ease-in-out) has a near-zero rate of change at the very start, which is imperceptible over a cell's small travel distance but eats a visibly large chunk of a wide box's sweep - use 2 (ease-out, moves immediately) for anything that travels far, like a full-row bar
+---@param duration? number seconds for a full sweep
+---@param easeType? easingType 2 (ease-out) for anything that travels far, like a full-row bar; 3 (default) otherwise
 function SettingsWindow:tickHighlight(h, isCurrent, dt, duration, easeType)
 	duration = duration or 0.2
 	easeType = easeType or 3
@@ -254,13 +240,8 @@ function SettingsWindow:drawSettings(dt, x, y, tabIndex)
 	end
 end
 
--- A committed value can be invalid without looking wrong at a glance (e.g. an
--- out-of-range measure silently clamped to the chart's last measure at commit -
--- the displayed number is unremarkable on its own, only wrong relative to the
--- drill's other point). Flashing calls attention to it without needing to
--- explain why in the limited space of a grid cell: first the value itself
--- flashes red 4 times a second, then it switches to the word "Invalid", then
--- alternates between the two once a second - not just steady red text.
+-- A clamped-at-commit value can look unremarkable despite being invalid, so
+-- flash: value flashes red 4x/sec, then swaps to "Invalid", alternating 1x/sec.
 ---@param value integer
 ---@param x number
 ---@param cx number
@@ -283,10 +264,8 @@ function SettingsWindow:drawInvalidCell(value, x, cx, cellW, rowMidY)
 	gfx.Text(tostring(value), x + cx + (cellW / 2), rowMidY)
 end
 
--- Draws one numeric cell (In-Measure/In-Beat/Out-Measure/Out-Beat) of a drill
--- row. A method taking plain arguments - not a per-row table of per-cell
--- tables - so the grid's hot per-frame render path (every visible row, every
--- frame) allocates nothing per cell.
+-- Draws one numeric cell of a drill row. Plain arguments, not a per-row table
+-- of per-cell tables, to avoid per-frame allocation.
 ---@param dt deltaTime
 ---@param x number
 ---@param idx integer
@@ -313,19 +292,13 @@ function SettingsWindow:drawDrillCell(dt, x, idx, cx, cellW, cellHighlightH, row
 	end
 
 	if cell.isEditing then
-		-- No flash here (see drawInvalidCell below) - the value's what you're
-		-- actively typing, so it should hold still.
+		-- No flash while typing - hold still so the value stays readable.
 		setColor(cell.invalid and "Negative" or "Positive", 1)
 		gfx.Text(tostring(cell.value) .. "_", x + cx + (cellW / 2), rowMidY)
 	elseif cell.invalid then
-		-- In >= out (measure or beat, whichever pair is the culprit) - still
-		-- freely editable/navigable, but flashes until the drill's points are
-		-- fixed (see drawInvalidCell below).
 		self:drawInvalidCell(cell.value, x, cx, cellW, rowMidY)
 	else
-		-- Same green-flash-then-fade as a moved row, any time this cell's
-		-- committed value changes while it stays valid - covers both "you just
-		-- fixed an invalid value" and "you changed an already-valid one."
+		-- Flash green-to-white when this cell's value changes while staying valid.
 		local key = cell.trackingId .. fieldKey
 		local lastVal = self.lastCellValue[key]
 		if lastVal ~= nil and lastVal ~= cell.value then
@@ -343,33 +316,18 @@ function SettingsWindow:drawDrillCell(dt, x, idx, cx, cellW, cellHighlightH, row
 		else
 			setColor("White", 0.85)
 		end
-		-- 0 is a blank start/end measure on a freshly created drill (see
-		-- PracticeModeSettingsDialog::IsDrillEmpty) - not a real measure number
-		-- (measures are 1-indexed), so show nothing rather than "0".
+		-- 0 = blank start/end measure on a new drill (IsDrillIncomplete), not a real value.
 		gfx.Text(cell.value == 0 and "" or tostring(cell.value), x + cx + (cellW / 2), rowMidY)
 	end
 end
 
--- The Drills tab lays its rows out as a compact grid (one line per drill,
--- header once at the top) instead of the generic one-row-per-line list.
+-- Compact grid (one line per drill, header at top) instead of the generic
+-- one-row-per-line list. Bypasses the label cache (settings[tabIndex]) since
+-- drill rows are dynamic - reads self.ctx.settings live instead.
 --
--- This deliberately bypasses SettingsWindow.settings[tabIndex] (the label
--- cache built once in getSettingsProps, keyed by setting name): drill rows
--- are dynamic (added/removed, and the C++ side rebuilds their names/values
--- live), so a name-keyed cache built once at dialog-open would silently miss
--- new/changed rows until the whole dialog were torn down and recreated. This
--- reads straight from the live self.ctx.settings (refreshed every frame by
--- SettingsWindowContext:update) and draws with plain gfx.Text calls, so it
--- always reflects the current C++ state with no caching to go stale.
---
--- Row layout produced by PracticeModeSettingsDialog::m_CreateDrillsTab is a
--- fixed, deterministic pattern: 7 settings per drill (Select, Rename,
--- In-Measure, In-Beat, Out-Measure, Out-Beat, Delete), followed by exactly two
--- trailing buttons (Create New Drill, then Set current in/out as a new drill)
--- - so drills can be grouped by position rather than by name. Drills stay
--- sorted by start point ascending (see
--- PracticeModeSettingsDialog::m_SortDrillsAndFollow) - editing In-Measure/
--- In-Beat can silently move a row to a different position in the list.
+-- C++ (m_CreateDrillsTab) emits a fixed 7 settings per drill then 2 trailing
+-- buttons, so rows group by position rather than by name. Drills stay sorted
+-- by start point ascending - editing In-Measure/In-Beat can move a row.
 ---@param dt deltaTime
 ---@param x number
 ---@param y number
@@ -381,9 +339,7 @@ function SettingsWindow:drawDrillsGrid(dt, x, y, tabIndex)
 	local rawSettings = self.ctx.settings
 	local total = #rawSettings
 	local groupSize = 7 -- Select, Rename, In-Measure, In-Beat, Out-Measure, Out-Beat, Delete
-	-- Two trailing rows follow the drills themselves: Create New Drill, then
-	-- Set current in/out as a new drill.
-	local numDrills = math.floor((total - 2) / groupSize)
+	local numDrills = math.floor((total - 2) / groupSize) -- - 2 trailing buttons
 	local w = self.w - 64
 
 	x = x + 6
@@ -400,15 +356,9 @@ function SettingsWindow:drawDrillsGrid(dt, x, y, tabIndex)
 	local deleteW = 100
 	local deleteX = w - deleteW -- left edge of the Delete/Invalid cell
 	local rowH = 34
-	-- Highlight boxes are inset symmetrically from the full content width so
-	-- the row highlight fully covers the DELETE text (centered within its own
-	-- deleteX..deleteX+deleteW cell) and reads as centered rather than left-biased.
-	local rowHighlightPad = 10
+	local rowHighlightPad = 10 -- insets the row highlight so it reads centered, not left-biased
 	local rowHighlightH = 28
-	-- Individual cells (Rename, the 4 numeric fields) highlight a bit shorter
-	-- than the full-row Select/Add-drill highlight, so it's visually obvious
-	-- at a glance whether the whole row or just one cell is selected.
-	local cellHighlightH = 20
+	local cellHighlightH = 20 -- shorter than the full-row highlight, so row vs. cell selection reads clearly
 
 	Fonts:load("SemiBold")
 	gfx.FontSize(16)
@@ -424,23 +374,9 @@ function SettingsWindow:drawDrillsGrid(dt, x, y, tabIndex)
 	gfx.FontSize(16)
 	y = y + 16
 
-	-- Vertical space actually available for drill rows before running into
-	-- the controls area near the bottom of this window's fixed height (self.h
-	-- = 664) - without this, every drill (there's no upper bound on how many a
-	-- chart can have) got a full set of highlight ticks, a table allocation,
-	-- several font switches and draw calls, every single frame, regardless of
-	-- whether it was anywhere near the visible area. Scroll to keep the
-	-- current selection (roughly centered) in view instead, the same way the
-	-- Default skin's equivalent list/grid do.
-	--
-	-- Drills never show a description (every branch below sets
-	-- self.description = nil), so the only thing this actually has to clear is
-	-- drawControls, anchored at a fixed y + 553 relative to the y this
-	-- function was originally called with (57, before the +16 header offsets
-	-- above) - i.e. absolute 610, vs. this body starting at y=89. 480 leaves a
-	-- clean ~40px gap for the "more below" indicator instead of the old,
-	-- overly conservative 420 (which fit 3 fewer rows than actually available
-	-- and started scrolling correspondingly earlier than it needed to).
+	-- Scroll to keep the current selection centered rather than drawing every
+	-- drill unconditionally. 480 fits up to drawControls (y=610, body starts at
+	-- y=89) with room for the "more below" indicator.
 	local bodyHeight = 480
 	local maxVisibleRows = math.max(1, math.floor(bodyHeight / rowH))
 	local totalVisualRows = numDrills + 2 -- + Create New Drill + Set current in/out rows
@@ -491,13 +427,12 @@ function SettingsWindow:drawDrillsGrid(dt, x, y, tabIndex)
 		local isDeleteCurrent = deleteIdx == settingIndex
 		local rowMidY = y + ((rowIndex0 - scrollRow) * rowH) + (rowH / 2)
 
-		-- Did this drill just move to a different row (a resort, triggered by
-		-- editing its own or another drill's In-Measure/In-Beat)? Tracked by
-		-- trackingId (stable identity), not row position (which is exactly
-		-- what just changed) - see rowMoveFlashes above.
+		-- Did THIS drill (the one under the cursor) move to a different row (a
+		-- resort)? Only checked for the current row - a resort shifts every row
+		-- between the old and new position by one, and they'd all look "moved" too.
 		local trackingId = rawSettings[selectIdx].trackingId
 		local prevRow = self.lastRowPosition[trackingId]
-		if prevRow ~= nil and prevRow ~= row then
+		if rowIndex0 == currentVisualRow and prevRow ~= nil and prevRow ~= row then
 			self:getFlashEasing(self.rowMoveFlashes, trackingId):reset(1)
 		end
 		self.lastRowPosition[trackingId] = row
@@ -535,13 +470,9 @@ function SettingsWindow:drawDrillsGrid(dt, x, y, tabIndex)
 			end
 		end
 
-		-- While actively editing, show the real (possibly empty) buffer as-is -
-		-- the C++ side already fills in the "Drill N" placeholder as real,
-		-- backspace-able text whenever there's no custom name (see
-		-- PracticeModeSettingsDialog::m_CreateDrillsTab), so this fallback only
-		-- matters as a defensive default and must never override what's
-		-- actually being typed (that made an emptied buffer visually "snap
-		-- back" to the placeholder mid-edit).
+		-- While editing, show the real (possibly empty) buffer as-is - this
+		-- fallback is only a defensive default, or an emptied buffer would
+		-- visually "snap back" to the placeholder mid-edit.
 		local drillLabel = renameSetting.isEditing and renameSetting.value
 			or ((renameSetting.value ~= "" and renameSetting.value) or ("DRILL %d"):format(row))
 
@@ -586,11 +517,8 @@ function SettingsWindow:drawDrillsGrid(dt, x, y, tabIndex)
 			self:tickHighlight(deleteHighlight, isDeleteCurrent, dt)
 		end
 
-		-- Row invalid (in >= out) - swap DELETE for an INVALID indicator, except
-		-- while hovering the delete option itself, so it's still possible to
-		-- delete an invalid drill rather than getting stuck with it. A first
-		-- request (button or the Del key) on Delete arms a confirm (armed)
-		-- rather than deleting outright - see m_RequestDeleteDrill.
+		-- Swap DELETE for INVALID when the drill's invalid, unless hovering Delete
+		-- itself (still deletable); armed = awaiting a confirming 2nd press.
 		local rowInvalid = rawSettings[selectIdx].invalid
 		local rowArmed = rawSettings[deleteIdx].armed
 		local deleteLabel = "DELETE"
@@ -616,9 +544,6 @@ function SettingsWindow:drawDrillsGrid(dt, x, y, tabIndex)
 			self.whichControl = "button"
 			self.description = nil
 		elseif isRenameCurrent or inMIdx == settingIndex or inBIdx == settingIndex or outMIdx == settingIndex or outBIdx == settingIndex then
-			-- Rename was previously missing from this check, so landing on it
-			-- left self.description/whichControl showing stale state from
-			-- whatever was current on a different tab before switching here.
 			self.whichControl = "value"
 			self.description = nil
 		end
@@ -626,9 +551,7 @@ function SettingsWindow:drawDrillsGrid(dt, x, y, tabIndex)
 		::continueDrillRow::
 	end
 
-	-- Trailing "Create New Drill" row - a plain always-enabled button, drawn
-	-- the same way as the Add row below it (can't go through the name-keyed
-	-- cache - see that row's comment).
+	-- Trailing "Create New Drill" row - always enabled.
 	local createSetting = rawSettings[createRowIdx]
 	local isCreateCurrent = createRowIdx == settingIndex
 	local createHighlight = self:getHighlight(createRowIdx)
@@ -659,18 +582,12 @@ function SettingsWindow:drawDrillsGrid(dt, x, y, tabIndex)
 		gfx.Text(createSetting.name:upper(), x, createRowMidY)
 	end
 
-	-- Trailing "Set current in/out as a new drill" row - the last "visual row"
-	-- (index numDrills + 1), subject to the same scroll window as the drills
-	-- above it. Its label toggles between an enabled and a disabled/explanatory
-	-- string depending on whether an in/out range is set (see
-	-- PracticeModeSettingsDialog::m_CreateDrillsTab), so - like the grid rows
-	-- above - it can't go through the name-keyed cache: the cache would only
-	-- ever hold whichever of the two strings existed when the dialog first
-	-- opened, and silently stop rendering on the other one.
+	-- Trailing "Set current in/out" row - label toggles enabled/disabled
+	-- depending on whether an in/out range is set.
 	local addSetting = rawSettings[addRowIdx]
 	local isAddCurrent = addRowIdx == settingIndex
 	local addHighlight = self:getHighlight(addRowIdx)
-	local isAddEnabled = addSetting.name ~= "Set an In and Out position to save as a drill"
+	local isAddEnabled = not addSetting.invalid
 
 	if addHighlight then
 		self:tickHighlight(addHighlight, isAddCurrent, dt, 0.35, 2)
